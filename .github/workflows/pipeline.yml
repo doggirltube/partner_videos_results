@@ -1,0 +1,74 @@
+name: Partner Video Upload Pipeline
+
+on:
+  # Run manually from the Actions tab — you control when each batch fires
+  workflow_dispatch:
+    inputs:
+      batch_limit:
+        description: "Videos to process this run (default: 50)"
+        required: false
+        default: "50"
+
+  # Optional: uncomment to run automatically every 2 hours
+  # schedule:
+  #   - cron: "0 */2 * * *"
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300   # 5 hours — well under GitHub's 6-hour cap
+
+    env:
+      GITHUB_TOKEN:    ${{ secrets.PAT_TOKEN }}          # your PAT (not the default GITHUB_TOKEN)
+      GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
+      DATABASE_URL:    ${{ secrets.DATABASE_URL }}
+      BATCH_LIMIT:     ${{ github.event.inputs.batch_limit || '50' }}
+      RESULTS_DIR:     results_repo
+
+    steps:
+      # ── 1. Checkout the workflow repo (contains pipeline.py) ──────────────
+      - name: Checkout pipeline repo
+        uses: actions/checkout@v4
+
+      # ── 2. Checkout the dedicated results repo ────────────────────────────
+      #       This is where pipeline_state.json and upload_results.json live.
+      #       Create this repo manually once: github.com/new → partner_videos_results
+      - name: Checkout results repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.GH_USERNAME }}/partner_videos_results
+          token:      ${{ secrets.PAT_TOKEN }}
+          path:       results_repo
+
+      # ── 3. Python setup ───────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary requests
+
+      # ── 4. Configure git identity (used when pushing video repos) ─────────
+      - name: Configure git
+        run: |
+          git config --global user.email "pipeline@partner-videos.local"
+          git config --global user.name  "Partner Video Pipeline"
+          # Store credentials so git push works without interactive prompts
+          git config --global credential.helper store
+          echo "https://${{ secrets.PAT_TOKEN }}@github.com" > ~/.git-credentials
+
+      # ── 5. Run the pipeline ───────────────────────────────────────────────
+      - name: Run pipeline
+        run: python pipeline.py
+
+      # ── 6. Commit state + results back to the results repo ────────────────
+      - name: Save state and results
+        working-directory: results_repo
+        run: |
+          git config user.email "pipeline@partner-videos.local"
+          git config user.name  "Partner Video Pipeline"
+          git add pipeline_state.json upload_results.json
+          # Only commit if there are actual changes
+          git diff --cached --quiet || git commit -m "pipeline run: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
