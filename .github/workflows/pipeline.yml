@@ -9,7 +9,7 @@ on:
         default: "50"
 
   schedule:
-    - cron: "0 */2 * * *"   # every 2 hours — adjust as needed
+    - cron: "*/15 * * * *"
 
 # ── CRITICAL: prevents two runs overlapping ──────────────────────────────────
 # If a new run starts while one is already running, the new one WAITS (not
