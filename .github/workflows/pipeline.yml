@@ -2,78 +2,77 @@ name: Partner Video Upload Pipeline
 
 on:
   workflow_dispatch:
-    inputs:
-      batch_limit:
-        description: "Videos to process this run (default: 50)"
-        required: false
-        default: "50"
 
+  # Optional: keep for automatic recovery if a runner dies
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "0 */6 * * *"
 
-# ── CRITICAL: prevents two runs overlapping ──────────────────────────────────
-# If a new run starts while one is already running, the new one WAITS (not
-# cancels). This means runs queue up properly and never conflict on git pushes.
 concurrency:
   group: pipeline-upload
-  cancel-in-progress: false   # queue, don't cancel
+  cancel-in-progress: false
 
 jobs:
   upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 300   # 5 hours max per run
+
+    # GitHub hosted runners max at 24h
+    timeout-minutes: 1440
 
     env:
-      GITHUB_TOKEN:    ${{ secrets.PAT_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
       GITHUB_USERNAME: ${{ secrets.GH_USERNAME }}
-      DATABASE_URL:    ${{ secrets.DATABASE_URL }}
-      BATCH_LIMIT:     ${{ github.event.inputs.batch_limit || '50' }}
-      RESULTS_DIR:     results_repo
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RESULTS_DIR: results_repo
 
     steps:
-      # ── 1. Checkout pipeline repo (contains pipeline.py) ──────────────────
+      # Checkout pipeline repo
       - name: Checkout pipeline repo
         uses: actions/checkout@v4
 
-      # ── 2. Checkout results repo (state + results live here) ──────────────
+      # Checkout results/state repo
       - name: Checkout results repo
         uses: actions/checkout@v4
         with:
           repository: ${{ secrets.GH_USERNAME }}/partner_videos_results
-          token:      ${{ secrets.PAT_TOKEN }}
-          path:       results_repo
+          token: ${{ secrets.PAT_TOKEN }}
+          path: results_repo
 
-      # ── 3. Python setup ───────────────────────────────────────────────────
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install psycopg2-binary requests
+        run: |
+          pip install psycopg2-binary requests
 
-      # ── 4. Git identity + credentials ─────────────────────────────────────
-      - name: Configure git
+      - name: Configure git credentials
         run: |
           git config --global user.email "pipeline@partner-videos.local"
-          git config --global user.name  "Partner Video Pipeline"
+          git config --global user.name "Partner Video Pipeline"
+
           git config --global credential.helper store
+
           echo "https://${{ secrets.PAT_TOKEN }}@github.com" > ~/.git-credentials
 
-      # ── 5. Run the pipeline ───────────────────────────────────────────────
       - name: Run pipeline
         run: python pipeline.py
 
-      # ── 6. Push updated state + results back to results repo ──────────────
-      #       Uses pull --rebase before push in case a queued run already
-      #       committed while this one was running (extra safety).
-      - name: Save state and results
+      - name: Commit state updates
         working-directory: results_repo
         run: |
+
           git config user.email "pipeline@partner-videos.local"
-          git config user.name  "Partner Video Pipeline"
+          git config user.name "Partner Video Pipeline"
+
           git add pipeline_state.json upload_results.json
-          git diff --cached --quiet && echo "[skip] No changes to commit" && exit 0
-          git commit -m "pipeline run: $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+
+          git commit -m "pipeline: $(date -u '+%Y-%m-%d %H:%M UTC')"
+
           git pull --rebase
           git push
