@@ -1,5 +1,5 @@
 {
-  "last_processed_offset": 975,
+  "last_processed_offset": 976,
   "global_index": 925,
   "current_repo_index": 15,
   "current_repo_video_count": 25,
@@ -5920,6 +5920,7 @@
     "f961a4c4-98ab-4362-9473-afac120883c9",
     "f96d16b5-6fb0-41d4-a062-4f4c9746d224",
     "fa0679fa-9230-43a3-ac51-2087383cfc0c",
-    "faeba4d0-15bb-4168-8d33-1cdbca398b57"
+    "faeba4d0-15bb-4168-8d33-1cdbca398b57",
+    "faf44510-7a38-4173-8c6c-2c4e02365aae"
   ]
 }
